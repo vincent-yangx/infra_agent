@@ -1,0 +1,13 @@
+[2026-05-01 01:58:12] INFO order-service: Received checkout request user_id=1832 order_id=9021
+[2026-05-01 01:58:13] INFO order-service: Calling payment-service for order_id=9021
+[2026-05-01 01:58:14] INFO payment-service: Payment authorization started for order_id=9021
+
+[2026-05-01 02:00:03] WARN order-service: Database query latency exceeded 5000ms
+[2026-05-01 02:00:08] ERROR order-service: Database query timeout after 30000ms while waiting for query result
+[2026-05-01 02:00:09] ERROR order-service: Failed to complete checkout request, returning 504 Gateway Timeout
+[2026-05-01 02:00:10] WARN order-service: Retrying database query for order_id=9021
+
+[2026-05-01 02:01:21] ERROR payment-service: Failed to update transaction status due to database query timeout
+[2026-05-01 02:01:35] WARN api-gateway: Upstream order-service returned 504 Gateway Timeout
+[2026-05-01 02:02:02] ERROR order-service: Database connection pool near limit: active_connections=480 max_connections=500
+[2026-05-01 02:02:18] WARN order-service: Checkout latency p95 increased to 28s

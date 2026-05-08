@@ -1,0 +1,85 @@
+# Runbook: Database Connection Timeout
+
+Symptoms:
+- Application logs contain "DB connection timeout".
+- API gateway may return 504 Gateway Timeout.
+- Checkout, payment, or order requests may fail.
+- Query latency and database connection usage may increase.
+
+Common Causes:
+- Database connection pool exhaustion.
+- Long-running queries.
+- Table lock contention.
+- Batch jobs consuming excessive CPU or locking tables.
+- Too many concurrent application requests.
+
+Evidence to Check:
+- Database CPU usage.
+- Active database connections.
+- Max connection limit.
+- Active locks.
+- Slow query count.
+- Query latency.
+- Recent scheduled jobs or batch scripts.
+
+Recommended Actions:
+- Check whether active connections are close to max_connections.
+- Inspect active locks and long-running queries.
+- Identify whether a scheduled batch job started near the incident time.
+- Temporarily stop or reschedule the batch job if it causes lock contention.
+- Increase database connection pool size only after confirming the database can handle it.
+
+
+# Runbook: Monthly Finance Batch Job Lock Contention
+
+Symptoms:
+- Checkout or order APIs fail around the beginning of the month.
+- Database CPU usage becomes very high.
+- Active locks increase.
+- Slow queries increase.
+- Application logs show database timeout or 504 Gateway Timeout.
+
+Common Causes:
+- Monthly finance reconciliation job scans a large transaction table.
+- The batch job holds table locks for too long.
+- Online checkout traffic competes with the batch job for database resources.
+
+Evidence to Check:
+- Whether a finance batch job started near the incident time.
+- Whether active_locks increased after the batch job started.
+- Whether slow_queries increased during the same time window.
+- Whether order-service or payment-service logs show DB timeout.
+
+Recommended Actions:
+- Move the finance batch job to an off-peak time window.
+- Reduce the lock scope of the batch job.
+- Add indexes for frequently scanned columns.
+- Split the batch job into smaller chunks.
+- Monitor database CPU, active locks, and slow queries during the next run.
+
+
+# Runbook: API Gateway 504 Timeout
+
+Symptoms:
+- Users receive 504 Gateway Timeout.
+- API gateway logs show upstream service timeout.
+- Backend service logs may show slow database queries or downstream dependency failures.
+
+Common Causes:
+- Backend service cannot respond within gateway timeout.
+- Database queries are slow.
+- Downstream service is unavailable.
+- Service thread pool or connection pool is exhausted.
+
+Evidence to Check:
+- Gateway timeout logs.
+- Backend service latency.
+- Database latency.
+- Downstream dependency error logs.
+- Connection pool usage.
+
+Recommended Actions:
+- Identify which upstream service returned timeout.
+- Check whether the backend service is blocked by database or downstream calls.
+- Increase timeout only as a temporary workaround.
+- Fix the underlying latency source first.

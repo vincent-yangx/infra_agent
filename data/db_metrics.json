@@ -1,0 +1,28 @@
+{
+  "database": "primary-order-db",
+  "timestamp": "2026-05-01 02:00:00",
+  "metrics": {
+    "cpu_usage_percent": 99,
+    "memory_usage_percent": 82,
+    "active_connections": 480,
+    "max_connections": 500,
+    "active_locks": 12,
+    "slow_queries": 37,
+    "avg_query_latency_ms": 8200,
+    "disk_usage_percent": 71
+  },
+  "events": [
+    {
+      "time": "2026-05-01 01:59:45",
+      "event": "monthly_finance_batch_started"
+    },
+    {
+      "time": "2026-05-01 02:00:02",
+      "event": "lock_wait_timeout_detected"
+    },
+    {
+      "time": "2026-05-01 02:00:15",
+      "event": "connection_pool_near_limit"
+    }
+  ]
+}
