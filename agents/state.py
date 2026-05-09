@@ -13,6 +13,8 @@ class AgentState(TypedDict):
     user_query: str
 
     raw_logs: Optional[str]
+    relevant_logs: Annotated[List[str], add]
+
     raw_metrics: Optional[Dict[str, Any]]
 
     log_findings: Annotated[List[str], add]
@@ -20,6 +22,7 @@ class AgentState(TypedDict):
     detected_errors: Annotated[List[str], add]
 
     metric_findings: Annotated[List[str], add]
+    metrics_to_check: Annotated[List[str], add]
 
     retrieved_docs: Annotated[List[str], add]
     evidence: Annotated[List[str], add]
@@ -35,6 +38,8 @@ def create_initial_state(user_query: str) -> AgentState:
     return {
         "user_query": user_query,
         "raw_logs": None,
+        "relevant_logs": [],
+
         "raw_metrics": {},
 
         "log_findings": [],
@@ -42,6 +47,7 @@ def create_initial_state(user_query: str) -> AgentState:
         "detected_errors": [],
 
         "metric_findings": [],
+        "metrics_to_check": [],
 
         "retrieval_docs": [],
         "evidence": [],

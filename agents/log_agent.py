@@ -1,10 +1,66 @@
+from typing import Literal
+from pydantic import BaseModel, Field, ConfigDict
+from langchain_core.prompts import ChatPromptTemplate
+from langchain_openai import ChatOpenAI
+
 from agents.state import AgentState
 from tools.file_readers import read_text_file
 
+
+ErrorType = Literal[
+    "database_query_timeout",
+    "gateway_504",
+    "connection_pool_pressure",
+    "high_latency",
+    "lock_contention",
+    "memory_pressure",
+    "unknown",
+]
+
+
+class LogExtraction(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    relevant_log_lines: list[str] = Field(
+        description="Exact log lines from the input that are relevant to the user's query."
+    )
+
+    log_findings: list[str] = Field(
+        description="Concise English findings extracted from the relevant logs."
+    )
+
+    detected_services: list[str] = Field(
+        description="Microservices involved in the relevant abnormal logs."
+    )
+
+    detected_errors: list[ErrorType] = Field(
+        description="Canonical error types inferred from the logs."
+    )
+
+    requires_metrics: bool = Field(
+        description="Whether metrics are needed to verify infrastructure, database, latency, or resource-related causes."
+    )
+
+    metrics_to_check: list[str] = Field(
+        description="Specific metrics that should be checked next, such as db_cpu_usage, active_locks, active_connections, p95_latency."
+    )
+
+
+llm = ChatOpenAI(
+    temperature=0,
+    model="gpt-4o-mini",
+)
+
+structured_llm = llm.with_structured_output(LogExtraction)
+
+
 def log_agent(state: AgentState):
     """
-    Extract important error signals from application logs
+    Use an LLM to extract query-relevant log evidence in a structured format.
     """
+
+    query = state["user_query"]
+
     try:
         raw_logs = read_text_file("app_logs.txt")
     except FileNotFoundError:
@@ -15,65 +71,67 @@ def log_agent(state: AgentState):
             "next_action": "retrieve_docs",
         }
 
-    log_findings = []
-    detected_services = []
-    detected_errors = []
+    prompt = ChatPromptTemplate.from_messages([
+        (
+            "system",
+            """
+You are a senior SRE engineer.
+
+Your task is to analyze system logs and extract only the information relevant to the user's troubleshooting request.
+
+Rules:
+- Do not invent facts that are not present in the logs.
+- Use English for all findings and labels.
+- Return exact relevant log lines when possible.
+- Distinguish symptoms from possible root causes.
+- If the logs suggest database, network, latency, CPU, memory, lock, or connection-pool issues, set requires_metrics to true.
+- Use only the canonical error labels allowed by the schema.
+"""
+        ),
+        (
+            "user",
+            """
+User troubleshooting request:
+{query}
+
+System logs:
+{logs}
+"""
+        )
+    ])
+
+    chain = prompt | structured_llm
+    result: LogExtraction = chain.invoke({
+        "query": query,
+        "logs": raw_logs,
+    })
+
+    metric_related_errors = {
+        "database_query_timeout",
+        "connection_pool_pressure",
+        "high_latency",
+        "lock_contention",
+        "memory_pressure",
+    }
+
+    should_check_metrics = (
+        result.requires_metrics
+        or any(error in metric_related_errors for error in result.detected_errors)
+    )
+
+    next_action = "check_metrics" if should_check_metrics else "retrieve_docs"
+
     evidence = []
-
-    lower_logs = raw_logs.lower()
-    """
-    Future problems:
-      keywords matching problems
-      Synonyms in keywords
-      incresing keywords
-    """
-    if "order-service" in lower_logs:
-        detected_services.append("order-service")
-
-    if "payment-service" in lower_logs:
-        detected_services.append("payment-service")
-
-    if "api-gateway" in lower_logs:
-        detected_services.append("api-gateway")
-
-    if "database query timeout" in lower_logs or "db connection timeout" in lower_logs:
-        detected_errors.append("database_query_timeout")
-        finding = "Application logs show database query timeout."
-        log_findings.append(finding)
-        evidence.append(finding)
-    
-    if "504 gateway timeout" in lower_logs:
-        detected_errors.append("504_gateway_timeout")
-        finding = "API gateway returned 504 gateway timeout."
-        log_findings.append(finding)
-        evidence.append(finding)
-
-    if "connection pool near limit" in lower_logs or "too many active database connections" in lower_logs:
-        detected_errors.append("connection_pool_near_limit")
-        finding = "Application logs suggest database connection pool pressure."
-        log_findings.append(finding)
-        evidence.append(finding)
-
-    if "latency p95 increased" in lower_logs:
-        detected_errors.append("high_latency")
-        finding = "Checkout latency p95 increased significantly."
-        log_findings.append(finding)
-        evidence.append(finding)
-
-    if any("database" in error or "connection" in error for error in detected_errors):
-        next_action = "check_metrics"
-    else:
-        next_action = "retrieve_docs"
+    evidence.extend(result.log_findings)
+    evidence.extend([f"Relevant log line: {line}" for line in result.relevant_log_lines])
 
     return {
         "raw_logs": raw_logs,
-        "log_findings": log_findings,
-        "detected_services": detected_services,
-        "detected_errors": detected_errors,
+        "relevant_logs": result.relevant_log_lines,
+        "log_findings": result.log_findings,
+        "detected_services": result.detected_services,
+        "detected_errors": result.detected_errors,
         "evidence": evidence,
-        "next_action": next_action
+        "metrics_to_check": result.metrics_to_check,
+        "next_action": next_action,
     }
-
-    
-
-    
