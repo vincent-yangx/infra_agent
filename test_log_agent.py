@@ -23,6 +23,9 @@ def main():
     for finding in result.get("log_findings", []):
         print("-", finding)
 
+    print("\n===== METRICS TO CHECK =====")
+    print(result.get("metrics_to_check", []))
+
     print("\n===== DETECTED SERVICES =====")
     print(result.get("detected_services", []))
 

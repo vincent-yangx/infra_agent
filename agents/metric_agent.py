@@ -1,31 +1,55 @@
 from agents.state import AgentState
 from tools.file_readers import read_json_file
 
+def normalize_metric_name(name: str) -> str:
+    return name.lower().strip().replace(" ", "_").replace("-", "_")
+
 
 def should_check(metric_name: str, metrics_to_check: list[str]) -> bool:
-    """
-    If metrics_to_check is empty, check all metrics.
-    Otherwise, only check requested metrics.
-    """
-
     if not metrics_to_check:
         return True
-    
-    normalized_targets = {m.lower() for m in metrics_to_check}
+
+    normalized_targets = {
+        normalize_metric_name(m) for m in metrics_to_check
+    }
 
     alias_map = {
-        "cpu_usage_percent": {"cpu", "db_cpu", "db_cpu_usage", "cpu_usage", "database_cpu_usage"},
-        "memory_usage_percent": {"memory", "db_memory", "memory_usage", "database_memory_usage"},
-        "active_connections": {"active_connections", "db_connections", "connection_count"},
-        "max_connections": {"max_connections", "connection_limit"},
-        "active_locks": {"active_locks", "db_locks", "lock_count", "locks"},
-        "slow_queries": {"slow_queries", "slow_query_count"},
-        "avg_query_latency_ms": {"avg_query_latency", "query_latency", "db_latency", "average_query_latency"},
-        "disk_usage_percent": {"disk", "disk_usage", "db_disk_usage"}
+        "cpu_usage_percent": {
+            "cpu_usage_percent", "cpu", "db_cpu", "db_cpu_usage",
+            "cpu_usage", "database_cpu_usage"
+        },
+        "memory_usage_percent": {
+            "memory_usage_percent", "memory", "db_memory",
+            "memory_usage", "database_memory_usage"
+        },
+        "active_connections": {
+            "active_connections", "db_connections",
+            "connection_count", "connections"
+        },
+        "max_connections": {
+            "max_connections", "connection_limit", "max_db_connections"
+        },
+        "active_locks": {
+            "active_locks", "db_locks", "lock_count", "locks"
+        },
+        "slow_queries": {
+            "slow_queries", "slow_query_count", "slow_sql"
+        },
+        "avg_query_latency_ms": {
+            "avg_query_latency_ms", "avg_query_latency",
+            "query_latency", "db_latency", "average_query_latency"
+        },
+        "disk_usage_percent": {
+            "disk_usage_percent", "disk", "disk_usage", "db_disk_usage"
+        },
     }
 
     aliases = alias_map.get(metric_name, {metric_name})
-    return bool(normalized_targets.intersection(aliases))
+    normalized_aliases = {
+        normalize_metric_name(alias) for alias in aliases
+    }
+
+    return bool(normalized_targets.intersection(normalized_aliases))
 
 
 def metric_agent (state: AgentState):
@@ -79,10 +103,11 @@ def metric_agent (state: AgentState):
             )
 
     # 3. Active connections
-    if should_check("active_connections", metrics_to_check):
+    if (
+    should_check("active_connections", metrics_to_check)
+    or should_check("max_connections", metrics_to_check)
+    ):
         if active_connections is not None and max_connections is not None:
-            connection_ratio = active_connections / max_connections
-
             finding = (
                 f"Database active connections reached {active_connections} "
                 f"out of {max_connections}."
@@ -90,10 +115,13 @@ def metric_agent (state: AgentState):
             metric_findings.append(finding)
             evidence.append(finding)
 
-            if connection_ratio >= 0.9:
-                hypothesis.append(
-                    "Database connection pressure may have caused requests to wait or timeout."
-                )
+            if max_connections > 0:
+                connection_ratio = active_connections / max_connections
+
+                if connection_ratio >= 0.9:
+                    hypothesis.append(
+                        "Database connection pressure may have caused requests to wait or timeout."
+                    )
 
     # 4. Active locks
     if should_check("active_locks", metrics_to_check):

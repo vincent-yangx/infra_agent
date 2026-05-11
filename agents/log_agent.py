@@ -17,6 +17,17 @@ ErrorType = Literal[
     "unknown",
 ]
 
+MetricName = Literal[
+    "cpu_usage_percent",
+    "memory_usage_percent",
+    "active_connections",
+    "max_connections",
+    "active_locks",
+    "slow_queries",
+    "avg_query_latency_ms",
+    "disk_usage_percent",
+]
+
 
 class LogExtraction(BaseModel):
     model_config = ConfigDict(extra="forbid")
@@ -41,8 +52,13 @@ class LogExtraction(BaseModel):
         description="Whether metrics are needed to verify infrastructure, database, latency, or resource-related causes."
     )
 
-    metrics_to_check: list[str] = Field(
-        description="Specific metrics that should be checked next, such as db_cpu_usage, active_locks, active_connections, p95_latency."
+    metrics_to_check: list[MetricName] = Field(
+        description=(
+            "Canonical metric names that should be checked next. "
+            "Only select from: cpu_usage_percent, memory_usage_percent, "
+            "active_connections, max_connections, active_locks, "
+            "slow_queries, avg_query_latency_ms, disk_usage_percent."
+        )
     )
 
 
@@ -72,9 +88,9 @@ def log_agent(state: AgentState):
         }
 
     prompt = ChatPromptTemplate.from_messages([
-        (
-            "system",
-            """
+    (
+        "system",
+        """
 You are a senior SRE engineer.
 
 Your task is to analyze system logs and extract only the information relevant to the user's troubleshooting request.
@@ -86,19 +102,38 @@ Rules:
 - Distinguish symptoms from possible root causes.
 - If the logs suggest database, network, latency, CPU, memory, lock, or connection-pool issues, set requires_metrics to true.
 - Use only the canonical error labels allowed by the schema.
+- Use only the canonical metric names allowed by the schema.
+
+Available metric names:
+- cpu_usage_percent: database CPU usage percentage
+- memory_usage_percent: database memory usage percentage
+- active_connections: current active database connections
+- max_connections: maximum allowed database connections
+- active_locks: number of active database locks
+- slow_queries: number of slow database queries
+- avg_query_latency_ms: average database query latency in milliseconds
+- disk_usage_percent: database disk usage percentage
+
+Metric selection rules:
+- If logs show database query timeout, include avg_query_latency_ms, slow_queries, active_locks, active_connections, and cpu_usage_percent.
+- If logs show connection pool pressure, include active_connections and max_connections.
+- If logs show lock contention or lock wait, include active_locks and slow_queries.
+- If logs show high latency, include avg_query_latency_ms.
+- If logs show memory pressure or OOM, include memory_usage_percent.
+- Do not invent metric names.
 """
-        ),
-        (
-            "user",
-            """
+    ),
+    (
+        "user",
+        """
 User troubleshooting request:
 {query}
 
 System logs:
 {logs}
 """
-        )
-    ])
+    )
+])
 
     chain = prompt | structured_llm
     result: LogExtraction = chain.invoke({
